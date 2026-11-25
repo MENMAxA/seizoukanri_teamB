@@ -78,3 +78,5 @@ dd { margin: 0; white-space: pre-wrap; }
   #fields { grid-template-columns: 1fr; }
   #csv-types { columns: 1; }
 }
+
+.order-filters { display: flex; flex-wrap: wrap; gap: .6rem; margin-bottom: .8rem; }

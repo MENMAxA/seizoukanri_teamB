@@ -200,7 +200,15 @@
   function renderOrders() {
     const list = $('orders');
     list.replaceChildren();
+    const suffix = $('order-suffix').value.trim().toLowerCase();
+    const paperFilter = $('paper-filter');
+    const previousPaper = paperFilter.value;
+    const papers = [...new Set([...state.orders.values()].map(order => order.paper))].sort();
+    paperFilter.replaceChildren(option('', 'すべて'), ...papers.map(paper => option(paper, paper)));
+    paperFilter.value = papers.includes(previousPaper) ? previousPaper : '';
     for (const order of [...state.orders.values()].reverse()) {
+      if (!order.id.toLowerCase().endsWith(suffix) ||
+          (paperFilter.value && paperFilter.value !== order.paper)) continue;
       const row = element('tr');
       if (!$('show-complete').checked && workflow.productionComplete(order, state.requests)) continue;
       const values = [order.id, order.product, order.paper, order.quantity + '部', order.dueDate,
@@ -263,6 +271,8 @@
     renderForm();
   }
 
+  $('order-suffix').addEventListener('input', renderOrders);
+  $('paper-filter').addEventListener('change', renderOrders);
   $('operation').append(...outgoing.map(([type, definition]) => option(type, definition.name)));
   $('operation').addEventListener('change', () => renderForm());
 
