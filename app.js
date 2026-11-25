@@ -6,6 +6,7 @@
   const $ = id => document.getElementById(id);
   const outgoing = Object.entries(workflow.interfaces).filter(([, definition]) => definition.from === department);
   const fields = {
+    provisionedAt: ['仮手配日時', 'datetime-local'], receivedAt: ['入庫日時', 'datetime-local'],
     orderId: ['注文ID'], requestId: ['依頼ID'], proofId: ['校正ID'],
     product: ['品名'], paper: ['用紙'], quantity: ['部数', 'number'],
     dueDate: ['希望納期', 'date'], reason: ['理由'], version: ['版番号', 'number'],
@@ -58,6 +59,7 @@
 
   function orderChoices(type) {
     const orders = [...state.orders.values()];
+    if (workflow.interfaces[type].local) return orders;
     if (type === 'reply') {
       return orders.filter(order => [...state.requests.values()].some(request =>
         request.orderId === order.id && !request.answer));
@@ -130,7 +132,7 @@
       if (automaticField(type, field)) continue;
       const label = element('label');
       const input = inputFor(type, field, order);
-      input.required = !['comment', 'confirmedDueDate'].includes(field) &&
+      input.required = !['comment', 'confirmedDueDate', 'provisionedAt', 'receivedAt'].includes(field) &&
         !(field === 'reason' && type === 'reply');
       if (field === 'orderId' && selectedOrder) input.value = selectedOrder;
       if (field === 'orderId') input.addEventListener('change', () => {
@@ -142,7 +144,9 @@
     }
     $('action-help').textContent = type === 'order' ? '注文IDと依頼IDは自動で発行します。' :
       '対象の注文を選択してください。関連する依頼や校正は注文を選ぶと表示されます。';
+    $('save-event').textContent = definition.local ? '台帳に登録' : '登録してCSVを書き出す';
     $('save-event').disabled = type !== 'order' && orderChoices(type).length === 0;
+    if (definition.local) $('action-help').textContent = '製造部の台帳に記録します。';
   }
 
   function download(name, text) {
@@ -187,6 +191,13 @@
         statusOf(order), order.proofStatus || '—', order.expectedDate || '—',
         order.delayReason || '—', order.initialFinished || order.goodQuantity ? order.goodQuantity + '部' : '—'];
       row.append(...values.map(value => element('td', value)));
+      const paperCell = row.cells[2];
+      if (order.provisionedAt) {
+        paperCell.append(element('br'), element('small', '仮手配 ' + order.provisionedAt.replace('T', ' ')));
+      }
+      if (order.receivedAt) {
+        paperCell.append(element('br'), element('small', '入庫 ' + order.receivedAt.replace('T', ' ')));
+      }
       list.append(row);
     }
     if (!list.children.length) rowMessage(list, 10, '注文がありません。');
@@ -210,7 +221,7 @@
       const detailCell = element('td');
       detailCell.append(detail);
       const actionCell = element('td');
-      if (sent) {
+      if (sent && !definition.local) {
         const button = element('button', 'CSVを書き出す');
         button.type = 'button';
         button.className = 'secondary';
@@ -219,7 +230,7 @@
       } else {
         actionCell.textContent = '—';
       }
-      row.append(element('td', sent ? '送信側' : '受信側'), element('td', definition.name),
+      row.append(element('td', definition.local ? '製造部内' : sent ? '送信側' : '受信側'), element('td', definition.name),
         element('td', event.orderId), detailCell, actionCell);
       list.append(row);
     }
@@ -276,6 +287,10 @@
     try {
       events = workflow.mergeEvents(events, [item]).events;
       refresh();
+      if (workflow.interfaces[type].local) {
+        show(workflow.interfaces[type].name + 'を台帳に登録しました。');
+        return;
+      }
       eventDownload(item);
       show(workflow.interfaces[type].name + 'を登録し、CSVを書き出しました。');
     } catch (error) {
@@ -326,6 +341,7 @@
 
   const guidance = $('csv-types');
   for (const [type, definition] of Object.entries(workflow.interfaces)) {
+    if (definition.local) continue;
     const item = element('li', (definition.from === department ? '書き出し' : '取り込み') + ' · ' +
       definition.name + '（' + type + '）');
     guidance.append(item);
