@@ -112,9 +112,18 @@
     return input;
   }
 
+  function finishDraft() {
+    const controls = $('entry').elements;
+    return JSON.stringify(['requestId', 'completedDate', 'goodQuantity', 'shortageQuantity'].map(name => {
+      const control = controls[name];
+      return [control.value, control.validity.badInput];
+    }));
+  }
+
   function renderForm(selectedOrder = '') {
     const type = $('operation').value;
     const definition = workflow.interfaces[type];
+    let initialFinishDraft;
     const order = state.orders.get(selectedOrder);
     const formFields = $('fields');
     formFields.replaceChildren();
@@ -127,12 +136,18 @@
         !(field === 'reason' && type === 'reply');
       if (field === 'orderId' && selectedOrder) input.value = selectedOrder;
       if (field === 'orderId') input.addEventListener('change', () => {
+        if (type === 'finish' && initialFinishDraft !== finishDraft() &&
+            !confirm('入力中の完了報告を破棄して注文を切り替えますか？')) {
+          input.value = selectedOrder;
+          return;
+        }
         renderForm(input.value);
         formFields.querySelector('[name="orderId"]').focus();
       });
       label.append(element('span', fields[field][0] + (input.required ? ' *' : '')), input);
       formFields.append(label);
     }
+    if (type === 'finish') initialFinishDraft = finishDraft();
     $('action-help').textContent = type === 'order' ? '注文IDと依頼IDは自動で発行します。' :
       '対象の注文を選択してください。関連する依頼や校正は注文を選ぶと表示されます。';
     $('save-event').disabled = type !== 'order' && orderChoices(type).length === 0;
