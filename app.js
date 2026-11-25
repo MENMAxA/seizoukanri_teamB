@@ -125,6 +125,15 @@
     }));
   }
 
+  function updateShortage() {
+    const form = $('entry').elements;
+    const request = state.requests.get(form.requestId.value);
+    form.goodQuantity.max = request?.targetQuantity ?? '';
+    const good = form.goodQuantity.valueAsNumber;
+    const valid = request && Number.isSafeInteger(good) && good >= 0 && good <= request.targetQuantity;
+    form.shortageQuantity.value = valid ? request.targetQuantity - good : '';
+  }
+
   function renderForm(selectedOrder = '') {
     const type = $('operation').value;
     renderOperationFields(type, selectedOrder);
@@ -156,7 +165,14 @@
         renderForm(input.value);
         formFields.querySelector('[name="orderId"]').focus();
       });
-      label.append(element('span', fields[field][0] + (input.required ? ' *' : '')), input);
+      if (type === 'finish' && field === 'shortageQuantity') {
+        input.readOnly = true;
+        input.required = false;
+      }
+      if (type === 'finish' && field === 'requestId') input.addEventListener('change', updateShortage);
+      if (type === 'finish' && field === 'goodQuantity') input.addEventListener('input', updateShortage);
+      const suffix = type === 'finish' && field === 'shortageQuantity' ? '（自動計算）' : input.required ? ' *' : '';
+      label.append(element('span', fields[field][0] + suffix), input);
       formFields.append(label);
     }
     if (type === 'finish') initialFinishDraft = finishDraft();
