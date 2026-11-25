@@ -6,6 +6,7 @@
   const $ = id => document.getElementById(id);
   const outgoing = Object.entries(workflow.interfaces).filter(([, definition]) => definition.from === department);
   const fields = {
+    provisionedAt: ['仮手配日時', 'datetime-local'], receivedAt: ['入庫日時', 'datetime-local'],
     orderId: ['注文ID'], requestId: ['依頼ID'], proofId: ['校正ID'],
     product: ['品名'], paper: ['用紙'], quantity: ['部数', 'number'],
     dueDate: ['希望納期', 'date'], reason: ['理由'], version: ['版番号', 'number'],
@@ -14,10 +15,12 @@
     decision: ['依頼回答', ['承認', '却下']], confirmedDueDate: ['確定納期', 'date'],
     stage: ['工程', workflow.stages], expectedDate: ['完了見込み日', 'date'],
     completedDate: ['完成日', 'date'], goodQuantity: ['良品部数', 'number'],
-    shortageQuantity: ['不足部数', 'number']
+    shortageQuantity: ['不足部数', 'number'],
+    assignee: ['製造担当者']
   };
   let events = [];
   let state = workflow.buildState(events);
+  let stageHistory = new Map();
 
   function element(tag, content) {
     const item = document.createElement(tag);
@@ -58,6 +61,7 @@
 
   function orderChoices(type) {
     const orders = [...state.orders.values()];
+    if (workflow.interfaces[type].local) return orders;
     if (type === 'reply') {
       return orders.filter(order => [...state.requests.values()].some(request =>
         request.orderId === order.id && !request.answer));
@@ -106,15 +110,41 @@
       const last = [...state.proofs.values()].filter(proof => order && proof.orderId === order.id).at(-1);
       input.value = last ? Number(last.version) + 1 : 1;
     }
+    if (field === 'assignee' && order) input.value = order.assignee || '';
     if (type === 'change' && order && ['paper', 'quantity', 'dueDate'].includes(field)) {
       input.value = order[field];
     }
     return input;
   }
 
+  function finishDraft() {
+    const controls = $('entry').elements;
+    return JSON.stringify(['requestId', 'completedDate', 'goodQuantity', 'shortageQuantity'].map(name => {
+      const control = controls[name];
+      return [control.value, control.validity.badInput];
+    }));
+  }
+
+  function updateShortage() {
+    const form = $('entry').elements;
+    const request = state.requests.get(form.requestId.value);
+    form.goodQuantity.max = request?.targetQuantity ?? '';
+    const good = form.goodQuantity.valueAsNumber;
+    const valid = request && Number.isSafeInteger(good) && good >= 0 && good <= request.targetQuantity;
+    form.shortageQuantity.value = valid ? request.targetQuantity - good : '';
+  }
+
   function renderForm(selectedOrder = '') {
     const type = $('operation').value;
+    renderOperationFields(type, selectedOrder);
+    const operation = workflow.interfaces[type];
+    $('save-event').textContent = operation.name +
+      (operation.local ? 'を台帳に登録' : 'を登録してCSVを書き出す');
+  }
+
+  function renderOperationFields(type, selectedOrder) {
     const definition = workflow.interfaces[type];
+    let initialFinishDraft;
     const order = state.orders.get(selectedOrder);
     const formFields = $('fields');
     formFields.replaceChildren();
@@ -123,19 +153,34 @@
       if (automaticField(type, field)) continue;
       const label = element('label');
       const input = inputFor(type, field, order);
-      input.required = !['comment', 'confirmedDueDate'].includes(field) &&
+      input.required = !['comment', 'confirmedDueDate', 'provisionedAt', 'receivedAt'].includes(field) &&
         !(field === 'reason' && type === 'reply');
       if (field === 'orderId' && selectedOrder) input.value = selectedOrder;
       if (field === 'orderId') input.addEventListener('change', () => {
+        if (type === 'finish' && initialFinishDraft !== finishDraft() &&
+            !confirm('入力中の完了報告を破棄して注文を切り替えますか？')) {
+          input.value = selectedOrder;
+          return;
+        }
         renderForm(input.value);
         formFields.querySelector('[name="orderId"]').focus();
       });
-      label.append(element('span', fields[field][0] + (input.required ? ' *' : '')), input);
+      if (type === 'finish' && field === 'shortageQuantity') {
+        input.readOnly = true;
+        input.required = false;
+      }
+      if (type === 'finish' && field === 'requestId') input.addEventListener('change', updateShortage);
+      if (type === 'finish' && field === 'goodQuantity') input.addEventListener('input', updateShortage);
+      const suffix = type === 'finish' && field === 'shortageQuantity' ? '（自動計算）' : input.required ? ' *' : '';
+      label.append(element('span', fields[field][0] + suffix), input);
       formFields.append(label);
     }
+    if (type === 'finish') initialFinishDraft = finishDraft();
     $('action-help').textContent = type === 'order' ? '注文IDと依頼IDは自動で発行します。' :
       '対象の注文を選択してください。関連する依頼や校正は注文を選ぶと表示されます。';
+    $('save-event').textContent = definition.local ? '台帳に登録' : '登録してCSVを書き出す';
     $('save-event').disabled = type !== 'order' && orderChoices(type).length === 0;
+    if (definition.local) $('action-help').textContent = '製造部の台帳に記録します。';
   }
 
   function download(name, text) {
@@ -158,8 +203,50 @@
     const request = state.requests.get(order.originalRequestId);
     if (order.cancelled) return 'キャンセル済み';
     if (!order.approved) return request.answer === '却下' ? '製造依頼却下' : '製造承認待ち';
-    if (order.initialFinished) return order.goodQuantity < order.quantity ? '完了・不足あり' : '完了';
-    return order.progress || '製造承認済み';
+    const additionalPending = [...state.requests.values()].some(request =>
+      request.orderId === order.id && request.type === 'additional' &&
+      request.answer === '承認' && !request.finished);
+    if (order.initialFinished) {
+      if (additionalPending) return '追加分作業あり';
+      return order.goodQuantity < order.quantity ? '完了・不足あり' : '完了';
+    }
+    return (order.progress || '製造承認済み') +
+      (additionalPending ? ' ／ 追加分作業あり' : '') +
+      (order.materialChangeRequired ? ' ⚠ 資材手配変更必要' : '');
+  }
+
+  function collectStageHistory(events) {
+    const byOrder = new Map();
+    const updates = events.filter(event => event.type === 'progress')
+      .sort((a, b) => Date.parse(a.updatedAt) - Date.parse(b.updatedAt));
+    for (const update of updates) {
+      if (!byOrder.has(update.orderId)) byOrder.set(update.orderId, []);
+      const history = byOrder.get(update.orderId);
+      if (history.at(-1)?.stage !== update.stage) history.push(update);
+    }
+    return byOrder;
+  }
+
+  function stageHistoryCell(orderId) {
+    const cell = element('td');
+    const updates = stageHistory.get(orderId);
+    if (!updates) {
+      cell.textContent = '—';
+      return cell;
+    }
+    const detail = element('details');
+    detail.append(element('summary', '工程変更履歴を見る'));
+    const list = element('ol');
+    for (const update of updates) {
+      const time = element('time', new Date(update.updatedAt).toLocaleString('ja-JP'));
+      time.dateTime = update.updatedAt;
+      const item = element('li');
+      item.append(time, ' ' + update.stage);
+      list.append(item);
+    }
+    detail.append(list);
+    cell.append(detail);
+    return cell;
   }
 
   function rowMessage(tableBody, columns, message) {
@@ -171,19 +258,59 @@
     tableBody.append(row);
   }
 
+  const assigneeFilter = element('select');
+  const assigneeLabel = element('label', '製造担当者で絞り込む');
+  assigneeLabel.append(assigneeFilter);
+  $('orders').closest('.table-wrap').before(assigneeLabel);
+  assigneeFilter.addEventListener('change', renderOrders);
+
   function renderOrders() {
+    const counts = new Map(workflow.stages.map(stage => [stage, 0]));
+    for (const order of state.orders.values()) {
+      if (workflow.availableOrder(order) && !workflow.productionComplete(order, state.requests) &&
+          counts.has(order.progress)) {
+        counts.set(order.progress, counts.get(order.progress) + 1);
+      }
+    }
+    $('stage-counts').textContent = [...counts].map(([stage, count]) => stage + ' ' + count + '件').join(' ／ ');
     const list = $('orders');
+    const assignee = assigneeFilter.value;
+    const assignees = [...new Set([...state.orders.values()].map(order => order.assignee).filter(Boolean))].sort();
+    assigneeFilter.replaceChildren(option('', 'すべて'), ...assignees.map(name => option(name, name)));
+    assigneeFilter.value = assignees.includes(assignee) ? assignee : '';
     list.replaceChildren();
+    const suffix = $('order-suffix').value.trim().toLowerCase();
+    const paperFilter = $('paper-filter');
+    const previousPaper = paperFilter.value;
+    const papers = [...new Set([...state.orders.values()].map(order => order.paper))].sort();
+    paperFilter.replaceChildren(option('', 'すべて'), ...papers.map(paper => option(paper, paper)));
+    paperFilter.value = papers.includes(previousPaper) ? previousPaper : '';
     for (const order of [...state.orders.values()].reverse()) {
+      if (!order.id.toLowerCase().endsWith(suffix) ||
+          (paperFilter.value && paperFilter.value !== order.paper)) continue;
       const row = element('tr');
-      const values = [order.id, order.product, order.paper, order.quantity + '部', order.dueDate,
+      if (!$('show-complete').checked && workflow.productionComplete(order, state.requests)) continue;
+      if (assigneeFilter.value && order.assignee !== assigneeFilter.value) continue;
+      const product = order.assignee ? order.product + '（担当 ' + order.assignee + '）' : order.product;
+      const values = [order.id, product, order.paper, order.quantity + '部', order.dueDate,
         statusOf(order), order.proofStatus || '—', order.expectedDate || '—',
         order.delayReason || '—', order.initialFinished || order.goodQuantity ? order.goodQuantity + '部' : '—'];
       row.append(...values.map(value => element('td', value)));
+      const paperCell = row.cells[2];
+      if (order.provisionedAt) {
+        paperCell.append(element('br'), element('small', '仮手配 ' + order.provisionedAt.replace('T', ' ')));
+      }
+      if (order.receivedAt) {
+        paperCell.append(element('br'), element('small', '入庫 ' + order.receivedAt.replace('T', ' ')));
+      }
+      row.append(stageHistoryCell(order.id));
       list.append(row);
     }
-    if (!list.children.length) rowMessage(list, 10, '注文がありません。');
-    $('order-count').textContent = state.orders.size + '件';
+    const count = list.children.length;
+    if (!count) {
+      rowMessage(list, list.closest('table').tHead.rows[0].cells.length, state.orders.size ? '絞り込み条件に一致する注文がありません。' : '注文がありません。');
+    }
+    $('order-count').textContent = count + '件';
   }
 
   function renderHistory() {
@@ -203,7 +330,7 @@
       const detailCell = element('td');
       detailCell.append(detail);
       const actionCell = element('td');
-      if (sent) {
+      if (sent && !definition.local) {
         const button = element('button', 'CSVを書き出す');
         button.type = 'button';
         button.className = 'secondary';
@@ -212,7 +339,7 @@
       } else {
         actionCell.textContent = '—';
       }
-      row.append(element('td', sent ? '送信側' : '受信側'), element('td', definition.name),
+      row.append(element('td', definition.local ? '製造部内' : sent ? '送信側' : '受信側'), element('td', definition.name),
         element('td', event.orderId), detailCell, actionCell);
       list.append(row);
     }
@@ -221,11 +348,14 @@
 
   function refresh() {
     state = workflow.buildState(events);
+    stageHistory = collectStageHistory(events);
     renderOrders();
     renderHistory();
     renderForm();
   }
 
+  $('order-suffix').addEventListener('input', renderOrders);
+  $('paper-filter').addEventListener('change', renderOrders);
   $('operation').append(...outgoing.map(([type, definition]) => option(type, definition.name)));
   $('operation').addEventListener('change', () => renderForm());
 
@@ -239,15 +369,48 @@
     if (type === 'proof') item.proofId = identifier('PRF');
     if (type === 'progress') item.updatedAt = new Date().toISOString();
 
+    // 完成報告は、送信前に良品部数と不足部数を確認する
+    if (type === 'finish') {
+      const request = state.requests.get(item.requestId);
+
+      if (!request) {
+        show('対象の製造依頼が見つかりません。', true);
+        return;
+      }
+
+      const goodQuantity = Number(item.goodQuantity);
+      const shortageQuantity = Number(item.shortageQuantity);
+
+      const message =
+        '完成報告の内容を確認してください。\n\n' +
+        '注文ID：' + item.orderId + '\n' +
+        '依頼部数：' + request.targetQuantity + '部\n\n' +
+        '良品部数：' + goodQuantity + '部\n' +
+        '不足部数：' + shortageQuantity + '部\n\n' +
+        'この内容で完成報告を送信しますか？';
+
+      if (!confirm(message)) {
+        show('完成報告の送信をキャンセルしました。');
+        return;
+      }
+    }
+
+
     try {
       events = workflow.mergeEvents(events, [item]).events;
       refresh();
+      if (workflow.interfaces[type].local) {
+        show(workflow.interfaces[type].name + 'を台帳に登録しました。');
+        return;
+      }
       eventDownload(item);
       show(workflow.interfaces[type].name + 'を登録し、CSVを書き出しました。');
     } catch (error) {
       show(error.message, true);
     }
   });
+
+  $('show-complete').addEventListener('change', renderOrders);
 
   $('incoming').addEventListener('change', async event => {
     const input = event.target;
@@ -267,6 +430,8 @@
       input.value = '';
     }
   });
+
+  $('print-orders').addEventListener('click', () => window.print());
 
   $('save-backup').addEventListener('click', () => {
     download(department + '-backup-' + localDate() + '.csv', workflow.exportBackup(department, events));
@@ -292,6 +457,7 @@
 
   const guidance = $('csv-types');
   for (const [type, definition] of Object.entries(workflow.interfaces)) {
+    if (definition.local) continue;
     const item = element('li', (definition.from === department ? '書き出し' : '取り込み') + ' · ' +
       definition.name + '（' + type + '）');
     guidance.append(item);
