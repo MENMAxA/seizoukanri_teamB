@@ -107,12 +107,17 @@
       if (approved && request.type !== 'order') {
         requireThat(availableOrder(order), 'キャンセル済みの注文は承認できません。');
       }
-      if (approved && request.type === 'change') {
-        requireThat(!order.initialFinished, '当初分の製造完了後は注文変更を承認できません。');
-        order.paper = request.paper;
-        order.quantity = Number(request.quantity);
-        state.requests.get(order.originalRequestId).targetQuantity = order.quantity;
-      }
+  requireThat(!order.initialFinished, '当初分の製造完了後は注文変更を承認できません。');
+
+  // 用紙が変更された場合、資材手配の変更が必要な印を付ける
+  if (order.paper !== request.paper) {
+    order.materialChangeRequired = true;
+  }
+
+  order.paper = request.paper;
+  order.quantity = Number(request.quantity);
+  state.requests.get(order.originalRequestId).targetQuantity = order.quantity;
+}
       if (approved && request.type === 'cancel') {
         requireThat(!order.initialFinished, '当初分の製造完了後はキャンセルを承認できません。');
         order.cancelled = true;

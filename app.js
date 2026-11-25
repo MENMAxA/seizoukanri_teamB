@@ -159,8 +159,8 @@
     if (order.cancelled) return 'キャンセル済み';
     if (!order.approved) return request.answer === '却下' ? '製造依頼却下' : '製造承認待ち';
     if (order.initialFinished) return order.goodQuantity < order.quantity ? '完了・不足あり' : '完了';
-    return order.progress || '製造承認済み';
-  }
+   return (order.progress || '製造承認済み') +
+  (order.materialChangeRequired ? ' ⚠ 資材手配変更必要' : '');
 
   function rowMessage(tableBody, columns, message) {
     const row = element('tr');
