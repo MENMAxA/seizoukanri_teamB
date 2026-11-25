@@ -203,8 +203,15 @@
     const request = state.requests.get(order.originalRequestId);
     if (order.cancelled) return 'キャンセル済み';
     if (!order.approved) return request.answer === '却下' ? '製造依頼却下' : '製造承認待ち';
-    if (order.initialFinished) return order.goodQuantity < order.quantity ? '完了・不足あり' : '完了';
+    const additionalPending = [...state.requests.values()].some(request =>
+      request.orderId === order.id && request.type === 'additional' &&
+      request.answer === '承認' && !request.finished);
+    if (order.initialFinished) {
+      if (additionalPending) return '追加分作業あり';
+      return order.goodQuantity < order.quantity ? '完了・不足あり' : '完了';
+    }
     return (order.progress || '製造承認済み') +
+      (additionalPending ? ' ／ 追加分作業あり' : '') +
       (order.materialChangeRequired ? ' ⚠ 資材手配変更必要' : '');
   }
 

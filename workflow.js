@@ -207,6 +207,7 @@
       '入庫日時は仮手配日時以降を指定してください。');
     order.provisionedAt = provisionedAt;
     order.receivedAt = receivedAt;
+    if (event.receivedAt) order.materialChangeRequired = false;
   }
 
   function eventValues(event) {
