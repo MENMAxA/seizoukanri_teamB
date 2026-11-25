@@ -12,7 +12,8 @@
     proof:       { name: '校正確認依頼', from: 'factory', fields: 'orderId proofId version instruction responseDueDate' },
     progress:    { name: '製造進捗通知', from: 'factory', fields: 'orderId stage updatedAt expectedDate' },
     delay:       { name: '納期遅延通知', from: 'factory', fields: 'orderId reason expectedDate' },
-    finish:      { name: '製造完了報告', from: 'factory', fields: 'orderId requestId completedDate goodQuantity shortageQuantity' }
+    finish:      { name: '製造完了報告', from: 'factory', fields: 'orderId requestId completedDate goodQuantity shortageQuantity' },
+    paperTracking: { name: '用紙の仮手配・入庫', from: 'factory', local: true, fields: 'orderId provisionedAt receivedAt' }
   };
   for (const definition of Object.values(interfaces)) {
     definition.fields = definition.fields.split(' ');
@@ -20,7 +21,7 @@
 
   const stages = ['準備中', '印刷中', '加工中', '検品中'];
   const requestTypes = ['order', 'change', 'cancel', 'additional'];
-  const optionalFields = ['comment', 'confirmedDueDate', 'reason'];
+  const optionalFields = ['comment', 'confirmedDueDate', 'reason', 'provisionedAt', 'receivedAt'];
   const positiveFields = ['quantity', 'version'];
   const countFields = ['goodQuantity', 'shortageQuantity'];
   const dateFields = ['dueDate', 'confirmedDueDate', 'responseDueDate', 'expectedDate', 'completedDate'];
@@ -74,6 +75,12 @@
     return order && order.approved && !order.cancelled;
   }
 
+  function productionComplete(order, requests) {
+    return order.initialFinished && ![...requests.values()].some(request =>
+      request.orderId === order.id && request.type === 'additional' &&
+      request.answer === '承認' && !request.finished);
+  }
+
   function applyEvent(state, event) {
     validateEvent(event);
     const order = state.orders.get(event.orderId);
@@ -107,17 +114,17 @@
       if (approved && request.type !== 'order') {
         requireThat(availableOrder(order), 'キャンセル済みの注文は承認できません。');
       }
-  requireThat(!order.initialFinished, '当初分の製造完了後は注文変更を承認できません。');
-
-  // 用紙が変更された場合、資材手配の変更が必要な印を付ける
-  if (order.paper !== request.paper) {
-    order.materialChangeRequired = true;
-  }
-
-  order.paper = request.paper;
-  order.quantity = Number(request.quantity);
-  state.requests.get(order.originalRequestId).targetQuantity = order.quantity;
-}
+      if (approved && request.type === 'change') {
+        requireThat(!order.initialFinished, '当初分の製造完了後は注文変更を承認できません。');
+        if (order.paper !== request.paper) {
+          order.materialChangeRequired = true;
+          order.provisionedAt = undefined;
+          order.receivedAt = undefined;
+        }
+        order.paper = request.paper;
+        order.quantity = Number(request.quantity);
+        state.requests.get(order.originalRequestId).targetQuantity = order.quantity;
+      }
       if (approved && request.type === 'cancel') {
         requireThat(!order.initialFinished, '当初分の製造完了後はキャンセルを承認できません。');
         order.cancelled = true;
@@ -129,6 +136,11 @@
       request.answer = event.decision;
       request.confirmedDueDate = event.confirmedDueDate || request.dueDate || '';
       request.answerReason = event.reason;
+      return;
+    }
+
+    if (event.type === 'paperTracking') {
+      trackPaper(order, event);
       return;
     }
 
@@ -174,6 +186,21 @@
         if (request.type === 'order') order.initialFinished = true;
         break;
     }
+  }
+
+  function trackPaper(order, event) {
+    requireThat(event.provisionedAt || event.receivedAt, '仮手配日時または入庫日時を入力してください。');
+    for (const value of [event.provisionedAt, event.receivedAt].filter(Boolean)) {
+      const date = new Date(value + 'Z');
+      requireThat(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value) &&
+        !isNaN(date) && date.toISOString().slice(0, 16) === value, '用紙の記録日時が不正です。');
+    }
+    const provisionedAt = event.provisionedAt || order.provisionedAt;
+    const receivedAt = event.receivedAt || order.receivedAt;
+    requireThat(!provisionedAt || !receivedAt || provisionedAt <= receivedAt,
+      '入庫日時は仮手配日時以降を指定してください。');
+    order.provisionedAt = provisionedAt;
+    order.receivedAt = receivedAt;
   }
 
   function eventValues(event) {
@@ -271,6 +298,7 @@
   }
 
   function exportExchange(type, events) {
+    requireThat(!interfaces[type]?.local, '製造部内専用の記録は交換CSVに書き出せません。');
     return encodeCsv([['eventId', 'type', ...interfaces[type].fields], ...events.map(eventValues)]);
   }
 
@@ -279,7 +307,7 @@
     requireThat(rows.length, 'CSVにデータ行がありません。');
     const type = rows[0][1];
     const definition = Object.hasOwn(interfaces, type) && interfaces[type];
-    requireThat(definition && definition.from !== receivingDepartment, '相手部署から受信する種類のCSVを選んでください。');
+    requireThat(definition && !definition.local && definition.from !== receivingDepartment, '相手部署から受信する種類のCSVを選んでください。');
     const expected = ['eventId', 'type', ...definition.fields];
     requireThat(JSON.stringify(header) === JSON.stringify(expected), 'CSVの見出しが仕様と一致しません。');
     return rows.map((row, index) => {
@@ -303,6 +331,6 @@
     return events;
   }
 
-  globalThis.PrintWorkflow = { interfaces, stages, availableOrder, buildState, mergeEvents,
+  globalThis.PrintWorkflow = { interfaces, stages, availableOrder, productionComplete, buildState, mergeEvents,
     exportExchange, readExchange, exportBackup, readBackup };
 })();

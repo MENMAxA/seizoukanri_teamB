@@ -24,7 +24,7 @@
 
     <div class="workspace">
       <section aria-labelledby="entry-title">
-        <h2 id="entry-title">相手部署に渡すCSV</h2>
+        <h2 id="entry-title">製造操作・CSV書き出し</h2>
         <form id="entry">
           <label>やり取りの種類
             <select id="operation"></select>
@@ -54,13 +54,20 @@
     <p id="message" role="status" aria-live="polite">CSVの処理結果をここに表示します。</p>
 
     <section aria-labelledby="orders-title">
+      <label class="show-complete"><input id="show-complete" type="checkbox">製造完了済みも表示</label>
       <h2 id="orders-title">注文一覧 <span id="order-count" class="count"></span></h2>
+      <p id="stage-counts"></p>
       <div class="table-wrap">
+        <div class="order-filters">
+          <label>注文IDの末尾 <input id="order-suffix" type="search"></label>
+          <label>用紙 <select id="paper-filter"><option value="">すべて</option></select></label>
+        </div>
         <table aria-labelledby="orders-title">
           <thead><tr><th scope="col">注文ID</th><th scope="col">品名</th><th scope="col">用紙</th><th scope="col">部数</th><th scope="col">納期</th><th scope="col">状態</th><th scope="col">校正</th><th scope="col">完了見込み</th><th scope="col">遅延理由</th><th scope="col">良品累計</th></tr></thead>
           <tbody id="orders"></tbody>
         </table>
       </div>
+      <button id="print-orders" class="secondary" type="button">注文一覧を印刷</button>
     </section>
 
     <section aria-labelledby="history-title">
