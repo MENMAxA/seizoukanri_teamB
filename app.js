@@ -20,6 +20,7 @@
   };
   let events = [];
   let state = workflow.buildState(events);
+  let stageHistory = new Map();
 
   function element(tag, content) {
     const item = document.createElement(tag);
@@ -191,6 +192,40 @@
       (order.materialChangeRequired ? ' ⚠ 資材手配変更必要' : '');
   }
 
+  function collectStageHistory(events) {
+    const byOrder = new Map();
+    const updates = events.filter(event => event.type === 'progress')
+      .sort((a, b) => Date.parse(a.updatedAt) - Date.parse(b.updatedAt));
+    for (const update of updates) {
+      if (!byOrder.has(update.orderId)) byOrder.set(update.orderId, []);
+      const history = byOrder.get(update.orderId);
+      if (history.at(-1)?.stage !== update.stage) history.push(update);
+    }
+    return byOrder;
+  }
+
+  function stageHistoryCell(orderId) {
+    const cell = element('td');
+    const updates = stageHistory.get(orderId);
+    if (!updates) {
+      cell.textContent = '—';
+      return cell;
+    }
+    const detail = element('details');
+    detail.append(element('summary', '工程変更履歴を見る'));
+    const list = element('ol');
+    for (const update of updates) {
+      const time = element('time', new Date(update.updatedAt).toLocaleString('ja-JP'));
+      time.dateTime = update.updatedAt;
+      const item = element('li');
+      item.append(time, ' ' + update.stage);
+      list.append(item);
+    }
+    detail.append(list);
+    cell.append(detail);
+    return cell;
+  }
+
   function rowMessage(tableBody, columns, message) {
     const row = element('tr');
     const cell = element('td', message);
@@ -245,11 +280,12 @@
       if (order.receivedAt) {
         paperCell.append(element('br'), element('small', '入庫 ' + order.receivedAt.replace('T', ' ')));
       }
+      row.append(stageHistoryCell(order.id));
       list.append(row);
     }
     const count = list.children.length;
     if (!count) {
-      rowMessage(list, 10, state.orders.size ? '絞り込み条件に一致する注文がありません。' : '注文がありません。');
+      rowMessage(list, list.closest('table').tHead.rows[0].cells.length, state.orders.size ? '絞り込み条件に一致する注文がありません。' : '注文がありません。');
     }
     $('order-count').textContent = count + '件';
   }
@@ -289,6 +325,7 @@
 
   function refresh() {
     state = workflow.buildState(events);
+    stageHistory = collectStageHistory(events);
     renderOrders();
     renderHistory();
     renderForm();
