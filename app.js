@@ -15,7 +15,8 @@
     decision: ['依頼回答', ['承認', '却下']], confirmedDueDate: ['確定納期', 'date'],
     stage: ['工程', workflow.stages], expectedDate: ['完了見込み日', 'date'],
     completedDate: ['完成日', 'date'], goodQuantity: ['良品部数', 'number'],
-    shortageQuantity: ['不足部数', 'number']
+    shortageQuantity: ['不足部数', 'number'],
+    assignee: ['製造担当者']
   };
   let events = [];
   let state = workflow.buildState(events);
@@ -108,6 +109,7 @@
       const last = [...state.proofs.values()].filter(proof => order && proof.orderId === order.id).at(-1);
       input.value = last ? Number(last.version) + 1 : 1;
     }
+    if (field === 'assignee' && order) input.value = order.assignee || '';
     if (type === 'change' && order && ['paper', 'quantity', 'dueDate'].includes(field)) {
       input.value = order[field];
     }
@@ -198,6 +200,12 @@
     tableBody.append(row);
   }
 
+  const assigneeFilter = element('select');
+  const assigneeLabel = element('label', '製造担当者で絞り込む');
+  assigneeLabel.append(assigneeFilter);
+  $('orders').closest('.table-wrap').before(assigneeLabel);
+  assigneeFilter.addEventListener('change', renderOrders);
+
   function renderOrders() {
     const counts = new Map(workflow.stages.map(stage => [stage, 0]));
     for (const order of state.orders.values()) {
@@ -208,6 +216,10 @@
     }
     $('stage-counts').textContent = [...counts].map(([stage, count]) => stage + ' ' + count + '件').join(' ／ ');
     const list = $('orders');
+    const assignee = assigneeFilter.value;
+    const assignees = [...new Set([...state.orders.values()].map(order => order.assignee).filter(Boolean))].sort();
+    assigneeFilter.replaceChildren(option('', 'すべて'), ...assignees.map(name => option(name, name)));
+    assigneeFilter.value = assignees.includes(assignee) ? assignee : '';
     list.replaceChildren();
     const suffix = $('order-suffix').value.trim().toLowerCase();
     const paperFilter = $('paper-filter');
@@ -220,7 +232,9 @@
           (paperFilter.value && paperFilter.value !== order.paper)) continue;
       const row = element('tr');
       if (!$('show-complete').checked && workflow.productionComplete(order, state.requests)) continue;
-      const values = [order.id, order.product, order.paper, order.quantity + '部', order.dueDate,
+      if (assigneeFilter.value && order.assignee !== assigneeFilter.value) continue;
+      const product = order.assignee ? order.product + '（担当 ' + order.assignee + '）' : order.product;
+      const values = [order.id, product, order.paper, order.quantity + '部', order.dueDate,
         statusOf(order), order.proofStatus || '—', order.expectedDate || '—',
         order.delayReason || '—', order.initialFinished || order.goodQuantity ? order.goodQuantity + '部' : '—'];
       row.append(...values.map(value => element('td', value)));

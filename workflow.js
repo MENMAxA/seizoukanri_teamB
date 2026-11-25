@@ -13,7 +13,8 @@
     progress:    { name: '製造進捗通知', from: 'factory', fields: 'orderId stage updatedAt expectedDate' },
     delay:       { name: '納期遅延通知', from: 'factory', fields: 'orderId reason expectedDate' },
     finish:      { name: '製造完了報告', from: 'factory', fields: 'orderId requestId completedDate goodQuantity shortageQuantity' },
-    paperTracking: { name: '用紙の仮手配・入庫', from: 'factory', local: true, fields: 'orderId provisionedAt receivedAt' }
+    paperTracking: { name: '用紙の仮手配・入庫', from: 'factory', local: true, fields: 'orderId provisionedAt receivedAt' },
+    assignment: { name: '製造担当者の登録', from: 'factory', local: true, fields: 'orderId assignee' }
   };
   for (const definition of Object.values(interfaces)) {
     definition.fields = definition.fields.split(' ');
@@ -97,6 +98,11 @@
       });
     } else {
       requireThat(order, '該当する注文がありません。先行するCSVを読み込んでください。');
+    }
+
+    if (event.type === 'assignment') {
+      order.assignee = event.assignee.trim();
+      return;
     }
 
     if (requestTypes.includes(event.type)) {
