@@ -176,14 +176,18 @@
     list.replaceChildren();
     for (const order of [...state.orders.values()].reverse()) {
       const row = element('tr');
+      if (!$('show-complete').checked && workflow.productionComplete(order, state.requests)) continue;
       const values = [order.id, order.product, order.paper, order.quantity + '部', order.dueDate,
         statusOf(order), order.proofStatus || '—', order.expectedDate || '—',
         order.delayReason || '—', order.initialFinished || order.goodQuantity ? order.goodQuantity + '部' : '—'];
       row.append(...values.map(value => element('td', value)));
       list.append(row);
     }
-    if (!list.children.length) rowMessage(list, 10, '注文がありません。');
-    $('order-count').textContent = state.orders.size + '件';
+    const count = list.children.length;
+    if (!count) {
+      rowMessage(list, 10, state.orders.size ? '絞り込み条件に一致する注文がありません。' : '注文がありません。');
+    }
+    $('order-count').textContent = count + '件';
   }
 
   function renderHistory() {
@@ -248,6 +252,8 @@
       show(error.message, true);
     }
   });
+
+  $('show-complete').addEventListener('change', renderOrders);
 
   $('incoming').addEventListener('change', async event => {
     const input = event.target;
