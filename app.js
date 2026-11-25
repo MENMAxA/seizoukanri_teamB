@@ -114,6 +114,13 @@
 
   function renderForm(selectedOrder = '') {
     const type = $('operation').value;
+    renderOperationFields(type, selectedOrder);
+    const operation = workflow.interfaces[type];
+    $('save-event').textContent = operation.name +
+      (operation.local ? 'を台帳に登録' : 'を登録してCSVを書き出す');
+  }
+
+  function renderOperationFields(type, selectedOrder) {
     const definition = workflow.interfaces[type];
     const order = state.orders.get(selectedOrder);
     const formFields = $('fields');
