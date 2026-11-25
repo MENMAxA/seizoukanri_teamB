@@ -75,6 +75,12 @@
     return order && order.approved && !order.cancelled;
   }
 
+  function productionComplete(order, requests) {
+    return order.initialFinished && ![...requests.values()].some(request =>
+      request.orderId === order.id && request.type === 'additional' &&
+      request.answer === '承認' && !request.finished);
+  }
+
   function applyEvent(state, event) {
     validateEvent(event);
     const order = state.orders.get(event.orderId);
@@ -324,6 +330,6 @@
     return events;
   }
 
-  globalThis.PrintWorkflow = { interfaces, stages, availableOrder, buildState, mergeEvents,
+  globalThis.PrintWorkflow = { interfaces, stages, availableOrder, productionComplete, buildState, mergeEvents,
     exportExchange, readExchange, exportBackup, readBackup };
 })();
