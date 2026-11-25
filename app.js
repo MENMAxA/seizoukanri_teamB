@@ -323,6 +323,8 @@
     }
   });
 
+  $('print-orders').addEventListener('click', () => window.print());
+
   $('save-backup').addEventListener('click', () => {
     download(department + '-backup-' + localDate() + '.csv', workflow.exportBackup(department, events));
     show('台帳を保存しました。再開時は「台帳を開く」を使ってください。');

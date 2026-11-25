@@ -55,6 +55,22 @@ summary { cursor: pointer; }
 dl { display: grid; grid-template-columns: max-content minmax(6rem, 1fr); gap: .15rem .65rem; margin: .5rem 0 0; }
 dd { margin: 0; white-space: pre-wrap; }
 #csv-types { columns: 2; }
+#print-orders { margin-top: .75rem; }
+
+@media print {
+  @page order-list { size: landscape; margin: 12mm; }
+  body[data-department="factory"] { page: order-list; color: black; background: white; }
+  [data-department="factory"] > header,
+  [data-department="factory"] main > :not([aria-labelledby="orders-title"]),
+  [data-department="factory"] section[aria-labelledby="orders-title"] > :not(h2, .table-wrap),
+  [data-department="factory"] .table-wrap > :not(table),
+  [data-department="factory"] :is(button, input, select, textarea) { display: none; }
+  [data-department="factory"] main,
+  [data-department="factory"] section[aria-labelledby="orders-title"] { display: block; padding: 0; border: 0; }
+  [data-department="factory"] .table-wrap { overflow: visible; }
+  [data-department="factory"] tr { break-inside: avoid; }
+  [data-department="factory"] :is(th, td) { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+}
 @media (max-width: 730px) {
   .workspace { grid-template-columns: 1fr; }
 }
