@@ -198,6 +198,14 @@
   }
 
   function renderOrders() {
+    const counts = new Map(workflow.stages.map(stage => [stage, 0]));
+    for (const order of state.orders.values()) {
+      if (workflow.availableOrder(order) && !workflow.productionComplete(order, state.requests) &&
+          counts.has(order.progress)) {
+        counts.set(order.progress, counts.get(order.progress) + 1);
+      }
+    }
+    $('stage-counts').textContent = [...counts].map(([stage, count]) => stage + ' ' + count + '件').join(' ／ ');
     const list = $('orders');
     list.replaceChildren();
     const suffix = $('order-suffix').value.trim().toLowerCase();
