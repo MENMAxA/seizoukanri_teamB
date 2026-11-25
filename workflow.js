@@ -117,6 +117,7 @@
       if (approved && request.type === 'change') {
         requireThat(!order.initialFinished, '当初分の製造完了後は注文変更を承認できません。');
         if (order.paper !== request.paper) {
+          order.materialChangeRequired = true;
           order.provisionedAt = undefined;
           order.receivedAt = undefined;
         }
