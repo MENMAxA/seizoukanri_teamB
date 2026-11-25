@@ -174,7 +174,15 @@
   function renderOrders() {
     const list = $('orders');
     list.replaceChildren();
+    const suffix = $('order-suffix').value.trim().toLowerCase();
+    const paperFilter = $('paper-filter');
+    const previousPaper = paperFilter.value;
+    const papers = [...new Set([...state.orders.values()].map(order => order.paper))].sort();
+    paperFilter.replaceChildren(option('', 'すべて'), ...papers.map(paper => option(paper, paper)));
+    paperFilter.value = papers.includes(previousPaper) ? previousPaper : '';
     for (const order of [...state.orders.values()].reverse()) {
+      if (!order.id.toLowerCase().endsWith(suffix) ||
+          (paperFilter.value && paperFilter.value !== order.paper)) continue;
       const row = element('tr');
       const values = [order.id, order.product, order.paper, order.quantity + '部', order.dueDate,
         statusOf(order), order.proofStatus || '—', order.expectedDate || '—',
@@ -182,8 +190,11 @@
       row.append(...values.map(value => element('td', value)));
       list.append(row);
     }
-    if (!list.children.length) rowMessage(list, 10, '注文がありません。');
-    $('order-count').textContent = state.orders.size + '件';
+    const count = list.children.length;
+    if (!count) {
+      rowMessage(list, 10, state.orders.size ? '絞り込み条件に一致する注文がありません。' : '注文がありません。');
+    }
+    $('order-count').textContent = count + '件';
   }
 
   function renderHistory() {
@@ -226,6 +237,8 @@
     renderForm();
   }
 
+  $('order-suffix').addEventListener('input', renderOrders);
+  $('paper-filter').addEventListener('change', renderOrders);
   $('operation').append(...outgoing.map(([type, definition]) => option(type, definition.name)));
   $('operation').addEventListener('change', () => renderForm());
 
