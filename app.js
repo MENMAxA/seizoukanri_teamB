@@ -239,6 +239,33 @@
     if (type === 'proof') item.proofId = identifier('PRF');
     if (type === 'progress') item.updatedAt = new Date().toISOString();
 
+    // 完成報告は、送信前に良品部数と不足部数を確認する
+    if (type === 'finish') {
+      const request = state.requests.get(item.requestId);
+
+      if (!request) {
+        show('対象の製造依頼が見つかりません。', true);
+        return;
+      }
+
+      const goodQuantity = Number(item.goodQuantity);
+      const shortageQuantity = Number(item.shortageQuantity);
+
+      const message =
+        '完成報告の内容を確認してください。\n\n' +
+        '注文ID：' + item.orderId + '\n' +
+        '依頼部数：' + request.targetQuantity + '部\n\n' +
+        '良品部数：' + goodQuantity + '部\n' +
+        '不足部数：' + shortageQuantity + '部\n\n' +
+        'この内容で完成報告を送信しますか？';
+
+      if (!confirm(message)) {
+        show('完成報告の送信をキャンセルしました。');
+        return;
+      }
+    }
+
+
     try {
       events = workflow.mergeEvents(events, [item]).events;
       refresh();
